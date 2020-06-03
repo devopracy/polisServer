@@ -1,4 +1,4 @@
--- Copyright (C) 2012-present, Polis Technology Inc. This program is free software: you can redistribute it and/or  modify it under the terms of the GNU Affero General Public License, version 3, as published by the Free Software Foundation. This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Affero General Public License for more details. You should have received a copy of the GNU Affero General Public License along with this program.  If not, see <http://www.gnu.org/licenses/>.
+-- Copyright (C) 2012-present, The Authors. This program is free software: you can redistribute it and/or  modify it under the terms of the GNU Affero General Public License, version 3, as published by the Free Software Foundation. This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Affero General Public License for more details. You should have received a copy of the GNU Affero General Public License along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 -- NOTE: use \d TABLENAME to see info, like indexes
 
@@ -197,7 +197,7 @@ CREATE TABLE conversations(
     spam_filter BOOLEAN DEFAULT TRUE,
     strict_moderation BOOLEAN DEFAULT FALSE,
     prioritize_seed BOOLEAN DEFAULT FALSE,
-    vis_type INTEGER NOT NULL DEFAULT 1, -- for now, vis=1 is on, vis=0 is off. in the future, other values may be used for other configurations of vis
+    vis_type INTEGER NOT NULL DEFAULT 0, -- for now, vis=1 is on, vis=0 is off. in the future, other values may be used for other configurations of vis
     write_type INTEGER NOT NULL DEFAULT 1, -- for now, 1 shows comment form, 0 hides the comment form. in the future, other values may be used for other configurations of comment form
     help_type INTEGER NOT NULL DEFAULT 1, -- 0 for disabled, 1 for enabled
     write_hint_type INTEGER NOT NULL DEFAULT 1, -- 1 for under comment form, 0 for off
@@ -209,6 +209,7 @@ CREATE TABLE conversations(
     help_bgcolor VARCHAR(20),
     help_color VARCHAR(20),
     email_domain VARCHAR(200), -- space separated domain names, "microsoft.com google.com"
+    use_xid_whitelist BOOLEAN DEFAULT FALSE, -- check xid whitelist
 
     owner INTEGER REFERENCES users(uid),
     org_id INTEGER REFERENCES users(uid), -- uid for the account manager of a conversation. Might be the same as the owner of the conversation.
@@ -382,6 +383,12 @@ CREATE TABLE participants_extended(
     referrer VARCHAR(9999), -- 2083 is listed as the max
     parent_url VARCHAR(9999), -- 2083 is listed as the max
     created BIGINT DEFAULT now_as_millis(),
+    modified BIGINT NOT NULL DEFAULT now_as_millis(),
+
+    subscribe_email VARCHAR(256), -- http://stackoverflow.com/questions/386294/what-is-the-maximum-length-of-a-valid-email-address
+
+    show_translation_activated BOOLEAN, -- true for activated, false for deactivated, or null for didn't click
+
     UNIQUE (zid, uid)
 );
 
@@ -410,6 +417,15 @@ CREATE TABLE xids (
     UNIQUE (owner, uid)
 );
 CREATE INDEX xids_owner_idx ON xids USING btree (owner);
+
+
+CREATE TABLE xid_whitelist (
+    owner INTEGER NOT NULL REFERENCES users(uid),
+    xid TEXT NOT NULL, -- TODO add constraint to limit length
+    created BIGINT DEFAULT now_as_millis(),
+    UNIQUE (owner, xid)
+);
+CREATE INDEX xid_whitelist_owner_idx ON xid_whitelist USING btree (owner);
 
 
 CREATE TABLE notification_tasks (
@@ -696,6 +712,18 @@ CREATE TABLE comment_translations (
 CREATE INDEX comment_translations_idx ON comment_translations USING btree (zid, tid);
 
 
+CREATE TABLE conversation_translations (
+  zid INTEGER NOT NULL REFERENCES conversations(zid),
+  src INTEGER NOT NULL, -- if positive, it's a uid, -1 for google translate, ...
+  topic VARCHAR(9999) NOT NULL,
+  description VARCHAR(9999) NOT NULL,
+  lang VARCHAR(10) NOT NULL, -- 'en', 'en-us', 'pt', 'pt-br'
+  created BIGINT DEFAULT now_as_millis(),
+  modified BIGINT DEFAULT now_as_millis(),
+  UNIQUE(zid, src, lang)
+);
+CREATE INDEX conversation_translations_idx ON conversation_translations USING btree (zid);
+
 
 CREATE TABLE reports (
   rid BIGSERIAL,
@@ -764,6 +792,7 @@ CREATE TABLE math_main (
   math_env VARCHAR(999) NOT NULL,
   data jsonb NOT NULL,
   last_vote_timestamp BIGINT NOT NULL,
+  caching_tick BIGINT NOT NULL DEFAULT 0,
   math_tick BIGINT NOT NULL DEFAULT -1, -- this will get its value from math_ticks
   modified BIGINT DEFAULT now_as_millis(),
   UNIQUE(zid, math_env)

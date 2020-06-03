@@ -1,4 +1,4 @@
-// Copyright (C) 2012-present, Polis Technology Inc. This program is free software: you can redistribute it and/or  modify it under the terms of the GNU Affero General Public License, version 3, as published by the Free Software Foundation. This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Affero General Public License for more details. You should have received a copy of the GNU Affero General Public License along with this program.  If not, see <http://www.gnu.org/licenses/>.
+// Copyright (C) 2012-present, The Authors. This program is free software: you can redistribute it and/or  modify it under the terms of the GNU Affero General Public License, version 3, as published by the Free Software Foundation. This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Affero General Public License for more details. You should have received a copy of the GNU Affero General Public License along with this program.  If not, see <http://www.gnu.org/licenses/>.
 "use strict";
 
 const Promise = require('bluebird');
@@ -31,12 +31,16 @@ helpersInitialized.then(function(o) {
     denyIfNotFromWhitelistedDomain,
     devMode,
     enableAgid,
+    fetchThirdPartyCookieTestPt1,
+    fetchThirdPartyCookieTestPt2,
     fetchIndexForAdminPage,
     fetchIndexForConversation,
     fetchIndexForReportPage,
     fetchIndexWithoutPreloadData,
     getArrayOfInt,
+    // getArrayOfStringLimitLength,
     getArrayOfStringNonEmpty,
+    getArrayOfStringNonEmptyLimitLength,
     getBool,
     getConversationIdFetchZid,
     getEmail,
@@ -111,6 +115,7 @@ helpersInitialized.then(function(o) {
     handle_GET_launchPrep,
     handle_GET_localFile_dev_only,
     handle_GET_locations,
+    handle_GET_logMaxmindResponse,
     handle_GET_lti_oauthv1_credentials,
     handle_GET_math_pca,
     handle_GET_math_pca2,
@@ -132,6 +137,8 @@ helpersInitialized.then(function(o) {
     handle_GET_snapshot,
     handle_GET_stripe_account_connect,
     handle_GET_stripe_account_connected_oauth_callback,
+    hangle_GET_testConnection,
+    hangle_GET_testDatabase,
     handle_GET_tryCookie,
     handle_GET_twitter_image,
     handle_GET_twitter_oauth_callback,
@@ -168,9 +175,11 @@ helpersInitialized.then(function(o) {
     handle_POST_joinWithInvite,
     handle_POST_lti_conversation_assignment,
     handle_POST_lti_setup_assignment,
+    handle_POST_math_update,
     handle_POST_metadata_answers,
     handle_POST_metadata_questions,
     handle_POST_metrics,
+    handle_POST_notifyTeam,
     handle_POST_participants,
     handle_POST_ptptCommentMod,
     handle_POST_query_participants_by_metadata,
@@ -191,9 +200,11 @@ helpersInitialized.then(function(o) {
     handle_POST_users_invite,
     handle_POST_votes,
     handle_POST_waitinglist,
+    handle_POST_xidWhitelist,
     handle_POST_zinvites,
     handle_PUT_comments,
     handle_PUT_conversations,
+    handle_PUT_participants_extended,
     handle_PUT_ptptois,
     handle_PUT_reports,
     handle_PUT_users,
@@ -221,10 +232,6 @@ helpersInitialized.then(function(o) {
   ////////////////////////////////////////////
   ////////////////////////////////////////////
 
-
-  //app.use(meter("api.all"));
-  // app.use(express.logger());
-
   app.use(function(req, res, next) {
     console.log("before");
     console.log(req.body);
@@ -233,16 +240,6 @@ helpersInitialized.then(function(o) {
   });
 
   app.use(middleware_responseTime_start);
-
-  // const gzipMiddleware = express.compress();
-  // function maybeApplyGzip(req, res, next) {
-  //   if (req.path && req.path.indexOf("/math/pca2") >= 0) {
-  //     // pca2 caches gzipped responses, so no need to gzip again.
-  //     next(null);
-  //   } else {
-  //     return gzipMiddleware(req, res, next);
-  //   }
-  // }
 
   app.use(redirectIfNotHttps);
   app.use(express.cookieParser());
@@ -294,7 +291,6 @@ helpersInitialized.then(function(o) {
     handle_GET_math_pca);
 
   app.get("/api/v3/math/pca2",
-    //meter("api.math.pca.get"),
     moveToBody,
     redirectIfHasZidButNoConversationId, // TODO remove once
     need('conversation_id', getConversationIdFetchZid, assignToPCustom('zid')),
@@ -380,9 +376,7 @@ helpersInitialized.then(function(o) {
   app.get("/api/v3/participants",
     moveToBody,
     auth(assignToP),
-    // want('pid', getInt, assignToP),
     need('conversation_id', getConversationIdFetchZid, assignToPCustom('zid')),
-    // resolve_pidThing('pid', assignToP),
     handle_GET_participants);
 
   app.get("/api/v3/dummyButton",
@@ -437,7 +431,7 @@ helpersInitialized.then(function(o) {
     auth(assignToP),
     need('conversation_id', getConversationIdFetchZid, assignToPCustom('zid')),
     need("type", getInt, assignToP),
-    want('email', getEmail, assignToP),
+    need('email', getEmail, assignToP),
     handle_POST_convSubscriptions);
 
   app.post("/api/v3/auth/login",
@@ -472,6 +466,14 @@ helpersInitialized.then(function(o) {
     need('filename', getStringLimitLength(9999), assignToP),
     handle_POST_sendEmailExportReady);
 
+
+  app.post("/api/v3/notifyTeam",
+    need('webserver_username', getStringLimitLength(1, 999), assignToP),
+    need('webserver_pass', getStringLimitLength(1, 999), assignToP),
+    need('subject', getStringLimitLength(9999), assignToP),
+    need('body', getStringLimitLength(99999), assignToP),
+    handle_POST_notifyTeam);
+
   app.get("/api/v3/domainWhitelist",
     moveToBody,
     auth(assignToP),
@@ -481,6 +483,11 @@ helpersInitialized.then(function(o) {
     auth(assignToP),
     need('domain_whitelist', getOptionalStringLimitLength(999), assignToP, ""),
     handle_POST_domainWhitelist);
+
+  app.post("/api/v3/xidWhitelist",
+    auth(assignToP),
+    need('xid_whitelist', getArrayOfStringNonEmptyLimitLength(9999, 999), assignToP),
+    handle_POST_xidWhitelist);
 
   app.get("/api/v3/conversationStats",
     moveToBody,
@@ -515,10 +522,6 @@ helpersInitialized.then(function(o) {
   app.post("/api/v3/auth/facebook",
     enableAgid,
     authOptional(assignToP),
-    // need('fb_user_id', getStringLimitLength(1, 9999), assignToP),
-    // need('fb_login_status', getStringLimitLength(1, 9999), assignToP),
-    // need('fb_auth_response', getStringLimitLength(1, 9999), assignToP),
-    // need('fb_access_token', getStringLimitLength(1, 9999), assignToP),
     want('fb_granted_scopes', getStringLimitLength(1, 9999), assignToP),
     want('fb_friends_response', getStringLimitLength(1, 99999), assignToP),
     want('fb_public_profile', getStringLimitLength(1, 99999), assignToP),
@@ -592,12 +595,6 @@ helpersInitialized.then(function(o) {
     auth(assignToP),
     handle_POST_stripe_cancel);
 
-  // app.post("/api/v3/stripe_start_plan",
-  //   auth(assignToP),
-  //   want('stripeToken', getOptionalStringLimitLength(9999), assignToP),
-  //   want('stripeEmail', getOptionalStringLimitLength(999), assignToP),
-  //   need('plan', getOptionalStringLimitLength(999), assignToP),
-  //   handle_POST_stripe_start_plan);
 
   app.post("/api/v3/charge",
     auth(assignToP),
@@ -634,29 +631,10 @@ helpersInitialized.then(function(o) {
     want('include_social', getBool, assignToP),
     want('include_demographics', getBool, assignToP),
     //    need('lastServerToken', _.identity, assignToP),
+    want('include_voting_patterns', getBool, assignToP, false),
     resolve_pidThing('not_voted_by_pid', assignToP, "get:comments:not_voted_by_pid"),
     resolve_pidThing('pid', assignToP, "get:comments:pid"),
     handle_GET_comments);
-
-  // // NOTE: using GET so it can be hit from an email URL.
-  // app.get("/api/v3/mute",
-  //     moveToBody,
-  //     // NOTE: no auth. We're relying on the signature. These URLs will be sent to conversation moderators.
-  //     need(HMAC_SIGNATURE_PARAM_NAME, getStringLimitLength(10, 999), assignToP),
-  //     need('conversation_id', getConversationIdFetchZid, assignToPCustom('zid')),
-  //     need('tid', getInt, assignToP),
-  //     handle_GET_mute);
-  //
-
-  // // NOTE: using GET so it can be hit from an email URL.
-  // app.get("/api/v3/unmute",
-  //     moveToBody,
-  //     // NOTE: no auth. We're relying on the signature. These URLs will be sent to conversation moderators.
-  //     need(HMAC_SIGNATURE_PARAM_NAME, getStringLimitLength(10, 999), assignToP),
-  //     need('conversation_id', getConversationIdFetchZid, assignToPCustom('zid')),
-  //     need('tid', getInt, assignToP),
-  //     handle_GET_unmute);
-  //
 
   // TODO probably need to add a retry mechanism like on joinConversation to handle possibility of duplicate tid race-condition exception
   app.post("/api/v3/comments",
@@ -704,14 +682,6 @@ helpersInitialized.then(function(o) {
     need('conversation_id', getConversationIdFetchZid, assignToPCustom('zid')),
     handle_GET_votes_me);
 
-  // // TODO Since we know what is selected, we also know what is not selected. So server can compute the ratio of support for a comment inside and outside the selection, and if the ratio is higher inside, rank those higher.
-  // app.get("/api/v3/selection",
-  //     moveToBody,
-  //     want('users', getArrayOfInt, assignToP),
-  //     need('conversation_id', getConversationIdFetchZid, assignToPCustom('zid')),
-  //     handle_GET_selection);
-  //
-
   app.get("/api/v3/votes",
     moveToBody,
     authOptional(assignToP),
@@ -732,6 +702,14 @@ helpersInitialized.then(function(o) {
     haltOnTimeout,
     handle_GET_nextComment);
 
+  app.get("/api/v3/testConnection",
+    moveToBody,
+    hangle_GET_testConnection);
+
+  app.get("/api/v3/testDatabase",
+    moveToBody,
+    hangle_GET_testDatabase);
+
   app.get("/robots.txt",
     function(req, res) {
       res.send("User-agent: *\n" +
@@ -749,6 +727,7 @@ helpersInitialized.then(function(o) {
     want('domain_whitelist_override_key', getStringLimitLength(1, 1000), assignToP),
     denyIfNotFromWhitelistedDomain, // this seems like the easiest place to enforce the domain whitelist. The index.html is cached on cloudflare, so that's not the right place.
 
+    want('xid', getStringLimitLength(1, 999), assignToP),
     resolve_pidThing('pid', assignToP, "get:votes"), // must be after zid getter
     handle_GET_participationInit);
 
@@ -765,6 +744,19 @@ helpersInitialized.then(function(o) {
     handle_POST_votes);
 
 
+  app.put("/api/v3/participants_extended",
+    auth(assignToP),
+    need('conversation_id', getConversationIdFetchZid, assignToPCustom('zid')),
+    want('show_translation_activated', getBool, assignToP),
+    handle_PUT_participants_extended);
+
+
+  app.get("/api/v3/logMaxmindResponse",
+    auth(assignToP),
+    need('user_uid', getInt, assignToP),
+    need('conversation_id', getConversationIdFetchZid, assignToPCustom('zid')),
+    handle_GET_logMaxmindResponse);
+
   app.post("/api/v3/ptptCommentMod",
     auth(assignToP),
     need('tid', getInt, assignToP),
@@ -779,7 +771,6 @@ helpersInitialized.then(function(o) {
     want('as_offtopic', getBool, assignToP, null),
     want('as_spam', getBool, assignToP, null),
     want('as_unsure', getBool, assignToP, null),
-    // resolve_pidThing('pid', assignToP, "post:ptptModComment"),
     getPidForParticipant(assignToP, pidCache),
     handle_POST_ptptCommentMod);
 
@@ -880,6 +871,7 @@ helpersInitialized.then(function(o) {
     want('tool_consumer_instance_guid', getOptionalStringLimitLength(999), assignToP),
     want('custom_canvas_assignment_id', getInt, assignToP),
     want('link_url', getStringLimitLength(1, 9999), assignToP),
+    want('subscribe_type', getInt, assignToP),
     handle_PUT_conversations);
 
 
@@ -1000,6 +992,13 @@ helpersInitialized.then(function(o) {
     want('report_id', getReportIdFetchRid, assignToPCustom('rid')), // Knowing the report_id grants the user permission to view the report
     handle_GET_reports);
 
+  app.post('/api/v3/mathUpdate',
+    moveToBody,
+    auth(assignToP),
+    need('conversation_id', getConversationIdFetchZid, assignToPCustom('zid')),
+    need('math_update_type', getStringLimitLength(1, 32), assignToP), // expecting "recompute" or "update"
+    handle_POST_math_update);
+
   app.post('/api/v3/reports',
     auth(assignToP),
     want('conversation_id', getConversationIdFetchZid, assignToPCustom('zid')),
@@ -1060,9 +1059,6 @@ helpersInitialized.then(function(o) {
     want('is_data_open', getBool, assignToP, false),
     want('ownerXid', getStringLimitLength(1, 999), assignToP),
     handle_POST_conversations);
-
-  // app.get('/api/v3/users',
-  //   handle_GET_users);
 
   app.post('/api/v3/query_participants_by_metadata',
     auth(assignToP),
@@ -1133,11 +1129,6 @@ helpersInitialized.then(function(o) {
     need('email', getEmail, assignToP),
     handle_POST_einvites);
 
-  // // TODO_SECURITY
-  // app.get("/api/v3/cache/purge/f2938rh2389hr283hr9823rhg2gweiwriu78",
-  //   // moveToBody,
-  //   handle_GET_cache_purge);
-
   app.get("/api/v3/einvites",
     moveToBody,
     need("einvite", getStringLimitLength(1, 100), assignToP),
@@ -1157,20 +1148,6 @@ helpersInitialized.then(function(o) {
     want("launch_presentation_return_url", getStringLimitLength(1, 9999), assignToP),
     want("ext_content_return_types", getStringLimitLength(1, 9999), assignToP),
     handle_POST_lti_setup_assignment);
-
-  // app.post("/api/v3/LTI/canvas_nav",
-  //     need("oauth_consumer_key", getStringLimitLength(1, 9999), assignToP), // for now, this will be the professor, but may also be the school
-  //     need("user_id", getStringLimitLength(1, 9999), assignToP),
-  //     need("context_id", getStringLimitLength(1, 9999), assignToP),
-  //     need("tool_consumer_instance_guid", getStringLimitLength(1, 9999), assignToP), //  scope to the right LTI/canvas? instance
-  //     want("roles", getStringLimitLength(1, 9999), assignToP),
-  //     want("user_image", getStringLimitLength(1, 9999), assignToP),
-  //     want("lis_person_contact_email_primary", getStringLimitLength(1, 9999), assignToP),
-  //     want("lis_person_name_full", getStringLimitLength(1, 9999), assignToP),
-  //     want("lis_outcome_service_url", getStringLimitLength(1, 9999), assignToP), //  send grades here!
-  //     want("launch_presentation_return_url", getStringLimitLength(1, 9999), assignToP),
-  //     want("ext_content_return_types", getStringLimitLength(1, 9999), assignToP),
-  //     handle_POST_lti_canvas_nav);
 
   app.post("/api/v3/LTI/conversation_assignment",
     need("oauth_consumer_key", getStringLimitLength(1, 9999), assignToP), // for now, this will be the professor, but may also be the school    need("oauth_consumer_key", getStringLimitLength(1, 9999), assignToP), // for now, this will be the professor, but may also be the school
@@ -1194,43 +1171,11 @@ helpersInitialized.then(function(o) {
   app.get("/api/v3/LTI/setup_assignment.xml",
     handle_GET_setup_assignment_xml);
 
-  // app.post("/api/v3/LTI/editor_tool",
-  //     need("oauth_consumer_key", getStringLimitLength(1, 9999), assignToP), // for now, this will be the professor, but may also be the school
-  //     need("user_id", getStringLimitLength(1, 9999), assignToP),
-  //     need("context_id", getStringLimitLength(1, 9999), assignToP),
-  //     want("roles", getStringLimitLength(1, 9999), assignToP),
-  //     want("user_image", getStringLimitLength(1, 9999), assignToP),
-  // // lis_outcome_service_url: send grades here!
-  //     want("lis_person_contact_email_primary", getStringLimitLength(1, 9999), assignToP),
-  //     want("launch_presentation_return_url", getStringLimitLength(1, 9999), assignToP),
-  //     want("ext_content_return_types", getStringLimitLength(1, 9999), assignToP),
-  //     handle_POST_lti_editor_tool);
-
-  // app.post("/api/v3/LTI/editor_tool_for_setup",
-  //     need("oauth_consumer_key", getStringLimitLength(1, 9999), assignToP), // for now, this will be the professor, but may also be the school
-  //     need("user_id", getStringLimitLength(1, 9999), assignToP),
-  //     need("context_id", getStringLimitLength(1, 9999), assignToP),
-  //     want("roles", getStringLimitLength(1, 9999), assignToP),
-  //     want("user_image", getStringLimitLength(1, 9999), assignToP),
-  // // lis_outcome_service_url: send grades here!
-  //     want("lis_person_contact_email_primary", getStringLimitLength(1, 9999), assignToP),
-  //     want("launch_presentation_return_url", getStringLimitLength(1, 9999), assignToP),
-  //     want("ext_content_return_types", getStringLimitLength(1, 9999), assignToP),
-  //     handle_POST_lti_editor_tool_for_setup);
-
   app.get("/api/v3/LTI/conversation_assignment.xml",
     handle_GET_conversation_assigmnent_xml);
 
   app.get("/canvas_app_instructions.png",
     handle_GET_canvas_app_instructions_png);
-
-  // app.post("/api/v3/users/invite",
-  //     // authWithApiKey(assignToP),
-  //     auth(assignToP),
-  //     need('conversation_id', getConversationIdFetchZid, assignToPCustom('zid')),
-  //     need('single_use_tokens', getBool, assignToP),
-  //     need('xids', getArrayOfStringNonEmpty, assignToP),
-  //     handle_POST_users_invite);
 
   app.post("/api/v3/users/invite",
     // authWithApiKey(assignToP),
@@ -1273,19 +1218,17 @@ helpersInitialized.then(function(o) {
     want('ucsd', getBool, assignToP), // not persisted
     want('ucsv', getBool, assignToP), // not persisted
     want('ucsf', getBool, assignToP), // not persisted
+    want('ui_lang', getStringLimitLength(1, 10), assignToP), // not persisted
     want('dwok', getStringLimitLength(1, 1000), assignToP), // not persisted
     want('xid', getStringLimitLength(1, 999), assignToP), // not persisted
     want('subscribe_type', getStringLimitLength(1,9), assignToP), // not persisted
     want('x_name', getStringLimitLength(1, 746), assignToP),  // not persisted here, but later on POST vote/comment
     want('x_profile_image_url', getStringLimitLength(1, 3000), assignToP),  // not persisted here, but later on POST vote/comment
     want('x_email', getStringLimitLength(256), assignToP),  // not persisted here, but later on POST vote/comment
+    want('build', getStringLimitLength(300), assignToP),
     handle_GET_implicit_conversation_generation);
 
   app.get("/iip/:conversation_id",
-    // function(req, res, next) {
-    //     req.p.conversation_id = req.params.conversation_id;
-    //     next();
-    // },
     moveToBody,
     need('conversation_id', getConversationIdFetchZid, assignToPCustom('zid')),
     handle_GET_iip_conversation);
@@ -1348,11 +1291,6 @@ helpersInitialized.then(function(o) {
     polisServerBrand.registerRoutes(app, o);
   }
 
-
-
-
-
-
   function makeFetchIndexWithoutPreloadData() {
     let port = portForParticipationFiles;
     return function(req, res) {
@@ -1361,27 +1299,10 @@ helpersInitialized.then(function(o) {
   }
 
 
-
-  // app.get("/api/v3/setFirstCookie",
-  //     moveToBody,
-  //     handle_GET_setFirstCookie);
-  // app.get("/api/v3/LTI/canvas_nav.xml",
-  //     handle_GET_lti_canvas_nav_xml);
-  // app.get("/api/v3/LTI/editor_tool.xml",
-  //     handle_GET_lti_editor_tool_xml);
-  // app.get("/api/v3/LTI/editor_tool_for_setup.xml",
-  //     handle_GET_editor_tool_for_setup_xml);
-  //app.use(express.static(__dirname + '/src/desktop/index.html'));
-  //app.use('/static', express.static(__dirname + '/src'));
-  //app.get('/', staticFile);
-  // app.get(/^\/iip\/([0-9][0-9A-Za-z]+)$/, fetchIndex);
-  // app.get(/^\/iim\/([0-9][0-9A-Za-z]+)$/, fetchIndex);
-
-
   // Conversation aliases
   app.get(/^\/football$/, makeRedirectorTo("/2arcefpshi"));
   app.get(/^\/pdf$/, makeRedirectorTo("/23mymwyhkn")); // pdf 2017
-
+  app.get(/^\/nabi$/, makeRedirectorTo("/8ufpzc6fkm")); // 
 
 
   app.get(/^\/[0-9][0-9A-Za-z]+(\/.*)?/, fetchIndexForConversation); // conversation view
@@ -1435,16 +1356,25 @@ helpersInitialized.then(function(o) {
   app.get(/^\/inboxApiTest/, fetchIndexWithoutPreloadData);
   app.get(/^\/pwresetinit.*/, fetchIndexForAdminPage);
   app.get(/^\/demo\/[0-9][0-9A-Za-z]+/, fetchIndexForConversation);
+  app.get(/^\/demo$/, fetchIndexForAdminPage);
   app.get(/^\/pwreset.*/, fetchIndexForAdminPage);
   app.get(/^\/company$/, fetchIndexForAdminPage);
-  app.get(/^\/pricing$/, fetchIndexForAdminPage);
 
   app.get(/^\/report\/r?[0-9][0-9A-Za-z]+(\/.*)?/, fetchIndexForReportPage);
   
+  app.get(/^\/thirdPartyCookieTestPt1\.html$/, fetchThirdPartyCookieTestPt1);
+  app.get(/^\/thirdPartyCookieTestPt2\.html$/, fetchThirdPartyCookieTestPt2);
+
   app.get(/^\/embed$/, makeFileFetcher(hostname, portForAdminFiles, "/embed.html", {
     'Content-Type': "text/html",
   }));
   app.get(/^\/embedPreprod$/, makeFileFetcher(hostname, portForAdminFiles, "/embedPreprod.html", {
+    'Content-Type': "text/html",
+  }));
+  app.get(/^\/embedReport$/, makeFileFetcher(hostname, portForAdminFiles, "/embedReport.html", {
+    'Content-Type': "text/html",
+  }));
+  app.get(/^\/embedReportPreprod$/, makeFileFetcher(hostname, portForAdminFiles, "/embedReportPreprod.html", {
     'Content-Type': "text/html",
   }));
   app.get(/^\/canvas_setup_backup_instructions$/, makeFileFetcher(hostname, portForParticipationFiles, "/canvas_setup_backup_instructions.html", {
